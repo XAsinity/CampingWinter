@@ -23,16 +23,60 @@ public class PlayerSettings : MonoBehaviour
     [SerializeField] ShadowQuality shadowQuality = ShadowQuality.All;
 
     [Header("Sound")]
-    [SerializeField, Range(0f, 2f)] float masterVolume = 1f;
+    [SerializeField, Range(0f, 4f)] float masterVolume = 1f;
 
     [Header("Persistence")]
+    [SerializeField] bool persistAcrossScenes = true;
     [SerializeField] bool loadSavedSettingsOnStart = true;
     [SerializeField] bool saveOnApplicationPause = true;
 
     string _settingsFilePath;
 
+    public static PlayerSettings Instance { get; private set; }
+
+    public bool EnableVSync
+    {
+        get => enableVSync;
+        set => enableVSync = value;
+    }
+
+    public int TargetFrameRate
+    {
+        get => targetFrameRate;
+        set => targetFrameRate = Mathf.Max(30, value);
+    }
+
+    public int QualityLevelIndex
+    {
+        get => qualityLevel;
+        set => qualityLevel = Mathf.Max(0, value);
+    }
+
+    public ShadowQuality ShadowQualitySetting
+    {
+        get => shadowQuality;
+        set => shadowQuality = value;
+    }
+
+    public float MasterVolume
+    {
+        get => masterVolume;
+        set => masterVolume = Mathf.Clamp(value, 0f, 4f);
+    }
+
     void Awake()
     {
+        if (Instance != null && Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        Instance = this;
+
+        if (persistAcrossScenes)
+            DontDestroyOnLoad(gameObject);
+
         _settingsFilePath = Path.Combine(Application.persistentDataPath, "player-settings.json");
 
         if (loadSavedSettingsOnStart)
@@ -73,6 +117,17 @@ public class PlayerSettings : MonoBehaviour
             SaveSettingsToDisk();
     }
 
+    public void ApplyAndSave()
+    {
+        ApplyAllSettings(saveToDisk: true);
+    }
+
+    public void ReloadFromDiskAndApply()
+    {
+        LoadSettingsFromDisk();
+        ApplyAllSettings(saveToDisk: false);
+    }
+
     void ApplyPerformanceSettings()
     {
         Application.runInBackground = true;
@@ -91,7 +146,8 @@ public class PlayerSettings : MonoBehaviour
 
     void ApplySoundSettings()
     {
-        AudioListener.volume = Mathf.Clamp01(masterVolume * 0.5f);
+        float effectiveVolume = Mathf.Max(0f, masterVolume * 0.5f);
+        AudioListener.volume = effectiveVolume;
         AudioListener.pause = false;
     }
 
@@ -135,7 +191,7 @@ public class PlayerSettings : MonoBehaviour
         shadowQuality = Enum.IsDefined(typeof(ShadowQuality), data.shadowQuality)
             ? (ShadowQuality)data.shadowQuality
             : ShadowQuality.All;
-        masterVolume = Mathf.Clamp(data.masterVolume, 0f, 2f);
+        masterVolume = Mathf.Clamp(data.masterVolume, 0f, 4f);
     }
 
     [ContextMenu("Delete Saved Settings File")]

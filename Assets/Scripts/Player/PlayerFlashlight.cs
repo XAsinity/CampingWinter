@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -9,6 +10,7 @@ public class PlayerFlashlight : MonoBehaviour
     [SerializeField] AudioClip turnOnClip;
     [SerializeField] AudioClip turnOffClip;
     [SerializeField] Key toggleKey = Key.F;
+    [SerializeField] bool startEnabled = false;
     [SerializeField] float maxBattery  = 100f;
     [SerializeField] float drainRate   = 1.5f;
     [SerializeField] bool forceNoShadows = true;
@@ -26,7 +28,10 @@ public class PlayerFlashlight : MonoBehaviour
     float _battery;
     float _baseIntensity;
     bool  _isOn = true;
+    bool _toggleInputEnabled = true;
     AudioSource _toggleAudio;
+    Coroutine _disruptionRoutine;
+    bool _isDisrupted;
 
     public float BatteryPercent => (_battery / maxBattery) * 100f;
     public bool  IsOn           => _isOn;
@@ -58,6 +63,7 @@ public class PlayerFlashlight : MonoBehaviour
 
             _baseIntensity = _light.intensity;
             _battery = maxBattery;
+            SetFlashlightEnabled(startEnabled && _battery > 0f);
         }
     }
 
@@ -65,7 +71,10 @@ public class PlayerFlashlight : MonoBehaviour
     {
         if (_light == null) return;
 
-        if (Keyboard.current != null && Keyboard.current[toggleKey].wasPressedThisFrame)
+        if (_isDisrupted)
+            return;
+
+        if (_toggleInputEnabled && Keyboard.current != null && Keyboard.current[toggleKey].wasPressedThisFrame)
         {
             bool nextState = !_isOn && _battery > 0f;
             if (_toggleAudio != null)
@@ -102,6 +111,75 @@ public class PlayerFlashlight : MonoBehaviour
                 _light.intensity = _baseIntensity;
             }
         }
+    }
+
+    public void SetToggleInputEnabled(bool enabled)
+    {
+        _toggleInputEnabled = enabled;
+    }
+
+    public void SetFlashlightEnabled(bool enabled)
+    {
+        if (_light == null)
+            return;
+
+        _isOn = enabled && _battery > 0f;
+        _light.enabled = _isOn;
+        _light.intensity = _baseIntensity;
+    }
+
+    public void TriggerScareDisruption(float forcedOffSeconds, float recoveryFlickerSeconds, float recoveryFlickerSpeed)
+    {
+        if (_light == null)
+            return;
+
+        if (_disruptionRoutine != null)
+            StopCoroutine(_disruptionRoutine);
+
+        _disruptionRoutine = StartCoroutine(ScareDisruptionRoutine(forcedOffSeconds, recoveryFlickerSeconds, recoveryFlickerSpeed));
+    }
+
+    IEnumerator ScareDisruptionRoutine(float forcedOffSeconds, float recoveryFlickerSeconds, float recoveryFlickerSpeed)
+    {
+        _isDisrupted = true;
+
+        _isOn = false;
+        _light.enabled = false;
+        _light.intensity = _baseIntensity;
+
+        float offT = 0f;
+        while (offT < forcedOffSeconds)
+        {
+            offT += Time.deltaTime;
+            yield return null;
+        }
+
+        float t = 0f;
+        while (t < recoveryFlickerSeconds)
+        {
+            t += Time.deltaTime;
+            float p = recoveryFlickerSeconds <= 0f ? 1f : Mathf.Clamp01(t / recoveryFlickerSeconds);
+
+            float noise = Mathf.PerlinNoise(Time.time * Mathf.Max(0.01f, recoveryFlickerSpeed), 0.173f);
+            float onChance = Mathf.Lerp(0.1f, 0.95f, p);
+            bool onThisFrame = noise < onChance && _battery > 0f;
+
+            _light.enabled = onThisFrame;
+            if (onThisFrame)
+            {
+                float intensityMul = Mathf.Lerp(0.2f, 1f, p) * (0.35f + 0.65f * noise);
+                _light.intensity = _baseIntensity * intensityMul;
+            }
+
+            yield return null;
+        }
+
+        _isOn = _battery > 0f;
+        _light.enabled = _isOn;
+        _light.intensity = _baseIntensity;
+
+        _isDisrupted = false;
+        _disruptionRoutine = null;
     }
 
     public void AddBattery(float amount)

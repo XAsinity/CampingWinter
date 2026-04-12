@@ -266,5 +266,14 @@ public class FirstPersonController : MonoBehaviour
         _targetHeight = _isCrouching ? crouchHeight : _standHeight;
         _cc.height = _targetHeight;
         _cc.center = new Vector3(0f, _cc.height * 0.5f, 0f);
+
+        if (_camTransform != null)
+        {
+            Vector3 local = _camTransform.localPosition;
+            local.y = _cc.height - 0.1f;
+            _camTransform.localPosition = local;
+        }
+
+        _bobTimer = 0f;
     }
 }

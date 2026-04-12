@@ -24,6 +24,8 @@ public class FindHerMonsterController : MonoBehaviour
     [SerializeField, Range(0f, 1f)] float baseSpawnChancePerRoll = 0.08f;
     [SerializeField, Range(0f, 1f)] float nightProgressSpawnBonus = 0.18f;
     [SerializeField, Range(0f, 1f)] float agitationSpawnBonusPerStack = 0.06f;
+    [SerializeField, Min(0f)] float minGapBeforeNextSpawnSeconds = 4f;
+    [SerializeField, Min(0f)] float maxGapBeforeNextSpawnSeconds = 10f;
 
     [Header("Find-Her Time Pressure")]
     [SerializeField, Min(1f)] float baseFindHerTimeSeconds = 18f;
@@ -34,12 +36,33 @@ public class FindHerMonsterController : MonoBehaviour
     [Header("Monster Spawns")]
     [SerializeField] List<Transform> spawnPoints = new List<Transform>();
 
+    [Header("Facing")]
+    [SerializeField] bool facePlayerWhileHunting = true;
+    [SerializeField] Transform modelFacingRootOverride;
+    [SerializeField] float modelFacingYawOffsetDegrees = 0f;
+    [SerializeField, Min(0f)] float modelFacingTurnSpeed = 20f;
+
     [Header("Flashlight Detection")]
     [SerializeField, Min(0.5f)] float maxDetectionDistance = 20f;
     [SerializeField, Min(0f)] float extraAnglePadding = 2f;
     [SerializeField, Min(0f)] float requiredContinuousSpotSeconds = 0.15f;
     [SerializeField] bool requireDirectRaycastHit = true;
     [SerializeField] LayerMask visibilityMask = ~0;
+
+    [Header("Found Scare Response")]
+    [SerializeField] bool disruptFlashlightOnFound = true;
+    [SerializeField, Min(0f)] float foundForcedOffSeconds = 0.35f;
+    [SerializeField, Min(0f)] float foundRecoveryFlickerSeconds = 1.2f;
+    [SerializeField, Min(0.01f)] float foundRecoveryFlickerSpeed = 18f;
+
+    [Header("Audio Hooks")]
+    [SerializeField] AudioSource monsterAudioSource;
+    [SerializeField] AudioClip spottedClip;
+    [SerializeField, Range(0f, 1f)] float spottedVolume = 1f;
+    [SerializeField, Range(0.1f, 3f)] float spottedPitch = 1f;
+    [SerializeField] AudioClip disappearClip;
+    [SerializeField, Range(0f, 1f)] float disappearVolume = 0.9f;
+    [SerializeField, Range(0.1f, 3f)] float disappearPitch = 1f;
 
     [Header("Runtime Debug (Read Only)")]
     [SerializeField] bool liveIsArmed;
@@ -55,6 +78,7 @@ public class FindHerMonsterController : MonoBehaviour
     float _spawnRollTimer;
     float _spotTimer;
     bool _resolvedCurrentRound;
+    float _nextSpawnAllowedTime;
 
     PlayerFlashlight _flashlight;
     PlayerSleepSystem _sleepSystem;
@@ -77,6 +101,9 @@ public class FindHerMonsterController : MonoBehaviour
         _sleepSystem = sleepSystemOverride;
         if (_sleepSystem == null)
             _sleepSystem = FindFirstObjectByType<PlayerSleepSystem>();
+
+        if (monsterAudioSource == null)
+            monsterAudioSource = GetComponent<AudioSource>();
 
         CacheMonsterComponents();
         SetMonsterVisible(false);
@@ -109,11 +136,21 @@ public class FindHerMonsterController : MonoBehaviour
             return;
         }
 
+        UpdateMonsterFacing();
+
         if (IsMonsterInFlashlightView())
         {
             _spotTimer += Time.deltaTime;
             if (_spotTimer >= requiredContinuousSpotSeconds)
             {
+                if (_flashlight == null)
+                    _flashlight = flashlightOverride != null ? flashlightOverride : FindFirstObjectByType<PlayerFlashlight>();
+
+                if (disruptFlashlightOnFound && _flashlight != null)
+                    _flashlight.TriggerScareDisruption(foundForcedOffSeconds, foundRecoveryFlickerSeconds, foundRecoveryFlickerSpeed);
+
+                PlayHookClip(spottedClip, spottedVolume, spottedPitch);
+
                 if (radioEvent != null)
                 {
                     _resolvedCurrentRound = true;
@@ -189,6 +226,9 @@ public class FindHerMonsterController : MonoBehaviour
         if (!_isArmed || radioEvent == null || radioEvent.IsRadioOn)
             return;
 
+        if (Time.time < _nextSpawnAllowedTime)
+            return;
+
         if (!IsPlayerLayingInBag())
         {
             _spawnRollTimer = 0f;
@@ -227,23 +267,78 @@ public class FindHerMonsterController : MonoBehaviour
         if (!_isArmed || monsterTransform == null || radioEvent == null)
             return;
 
+        if (!TryMoveMonsterToRandomSpawn())
+            return;
+
         float timeLimitSeconds = GetCurrentFindHerTimeLimitSeconds();
 
         if (!radioEvent.TryStartMonsterRound(timeLimitSeconds))
             return;
 
-        MoveMonsterToRandomSpawn();
         SetMonsterVisible(true);
         _huntActive = true;
         _resolvedCurrentRound = false;
         liveCurrentFindHerTime = timeLimitSeconds;
+        UpdateMonsterFacing();
+    }
+
+    bool TryMoveMonsterToRandomSpawn()
+    {
+        var validSpawns = new List<Transform>();
+        for (int i = 0; i < spawnPoints.Count; i++)
+        {
+            if (spawnPoints[i] != null)
+                validSpawns.Add(spawnPoints[i]);
+        }
+
+        if (validSpawns.Count == 0)
+        {
+            Debug.LogWarning("[FindHer] No valid spawn points assigned. Hunt start aborted.");
+            return false;
+        }
+
+        const float samePositionThreshold = 0.05f;
+        if (validSpawns.Count > 1)
+        {
+            for (int i = validSpawns.Count - 1; i >= 0; i--)
+            {
+                if (Vector3.Distance(validSpawns[i].position, transform.position) <= samePositionThreshold)
+                    validSpawns.RemoveAt(i);
+            }
+
+            if (validSpawns.Count == 0)
+            {
+                for (int i = 0; i < spawnPoints.Count; i++)
+                {
+                    if (spawnPoints[i] != null)
+                        validSpawns.Add(spawnPoints[i]);
+                }
+            }
+        }
+
+        Transform spawn = validSpawns[Random.Range(0, validSpawns.Count)];
+        transform.position = spawn.position;
+        transform.rotation = spawn.rotation;
+        return true;
     }
 
     void EndHunt()
     {
+        bool wasActive = _huntActive;
+
         _huntActive = false;
         _spotTimer = 0f;
         SetMonsterVisible(false);
+
+        if (wasActive)
+            ScheduleNextSpawnGap();
+    }
+
+    void ScheduleNextSpawnGap()
+    {
+        float minGap = Mathf.Max(0f, minGapBeforeNextSpawnSeconds);
+        float maxGap = Mathf.Max(minGap, maxGapBeforeNextSpawnSeconds);
+        _nextSpawnAllowedTime = Time.time + Random.Range(minGap, maxGap);
     }
 
     float GetCurrentFindHerTimeLimitSeconds()
@@ -289,21 +384,43 @@ public class FindHerMonsterController : MonoBehaviour
         liveCurrentFindHerTime = GetCurrentFindHerTimeLimitSeconds();
     }
 
-    void MoveMonsterToRandomSpawn()
+    void UpdateMonsterFacing()
     {
-        var validSpawns = new List<Transform>();
-        for (int i = 0; i < spawnPoints.Count; i++)
-        {
-            if (spawnPoints[i] != null)
-                validSpawns.Add(spawnPoints[i]);
-        }
-
-        if (validSpawns.Count == 0)
+        if (!facePlayerWhileHunting)
             return;
 
-        Transform spawn = validSpawns[Random.Range(0, validSpawns.Count)];
-        monsterTransform.position = spawn.position;
-        monsterTransform.rotation = spawn.rotation;
+        Transform facingRoot = modelFacingRootOverride != null ? modelFacingRootOverride : monsterTransform;
+        if (facingRoot == null)
+            return;
+
+        Transform target = ResolveFacingTarget();
+        if (target == null)
+            return;
+
+        Vector3 toTarget = target.position - facingRoot.position;
+        toTarget.y = 0f;
+        if (toTarget.sqrMagnitude <= 0.0001f)
+            return;
+
+        Quaternion desired = Quaternion.LookRotation(toTarget.normalized, Vector3.up)
+                             * Quaternion.Euler(0f, modelFacingYawOffsetDegrees, 0f);
+
+        if (modelFacingTurnSpeed <= 0f)
+            facingRoot.rotation = desired;
+        else
+            facingRoot.rotation = Quaternion.Slerp(facingRoot.rotation, desired, Time.deltaTime * modelFacingTurnSpeed);
+    }
+
+    Transform ResolveFacingTarget()
+    {
+        if (_flashlight != null && _flashlight.FlashlightLight != null)
+            return _flashlight.FlashlightLight.transform;
+
+        var camera = Camera.main;
+        if (camera != null)
+            return camera.transform;
+
+        return _sleepSystem != null ? _sleepSystem.transform : null;
     }
 
     bool IsMonsterInFlashlightView()
@@ -338,18 +455,38 @@ public class FindHerMonsterController : MonoBehaviour
             return false;
 
         if (Physics.Raycast(origin, toMonster.normalized, out RaycastHit hit, distance, visibilityMask, QueryTriggerInteraction.Ignore))
-            return hit.transform.IsChildOf(monsterTransform);
+            return IsHitOnMonsterHierarchy(hit.transform);
 
         return !requireDirectRaycastHit;
     }
 
+    bool IsHitOnMonsterHierarchy(Transform hitTransform)
+    {
+        if (hitTransform == null)
+            return false;
+
+        if (hitTransform == transform || hitTransform.IsChildOf(transform) || transform.IsChildOf(hitTransform))
+            return true;
+
+        if (monsterTransform != null)
+        {
+            if (hitTransform == monsterTransform || hitTransform.IsChildOf(monsterTransform) || monsterTransform.IsChildOf(hitTransform))
+                return true;
+        }
+
+        if (detectionTargetOverride != null)
+        {
+            if (hitTransform == detectionTargetOverride || hitTransform.IsChildOf(detectionTargetOverride) || detectionTargetOverride.IsChildOf(hitTransform))
+                return true;
+        }
+
+        return false;
+    }
+
     void CacheMonsterComponents()
     {
-        if (monsterTransform == null)
-            return;
-
-        _monsterRenderers = monsterTransform.GetComponentsInChildren<Renderer>(true);
-        _monsterColliders = monsterTransform.GetComponentsInChildren<Collider>(true);
+        _monsterRenderers = transform.GetComponentsInChildren<Renderer>(true);
+        _monsterColliders = transform.GetComponentsInChildren<Collider>(true);
     }
 
     void SetMonsterVisible(bool visible)
@@ -362,5 +499,37 @@ public class FindHerMonsterController : MonoBehaviour
 
         for (int i = 0; i < _monsterColliders.Length; i++)
             _monsterColliders[i].enabled = visible;
+    }
+
+    void PlayHookClip(AudioClip clip, float volume, float pitch)
+    {
+        if (clip == null)
+            return;
+
+        if (monsterAudioSource == null)
+        {
+            monsterAudioSource = GetComponent<AudioSource>();
+            if (monsterAudioSource == null)
+                return;
+        }
+
+        float originalPitch = monsterAudioSource.pitch;
+        monsterAudioSource.pitch = Mathf.Clamp(pitch, 0.1f, 3f);
+        monsterAudioSource.PlayOneShot(clip, Mathf.Clamp01(volume));
+        monsterAudioSource.pitch = originalPitch;
+    }
+
+    public void ResetForNightStart()
+    {
+        _isArmed = false;
+        _huntActive = false;
+        _agitation = 0;
+        _closedEyesTimer = 0f;
+        _spawnRollTimer = 0f;
+        _spotTimer = 0f;
+        _resolvedCurrentRound = false;
+        _nextSpawnAllowedTime = 0f;
+
+        SetMonsterVisible(false);
     }
 }
