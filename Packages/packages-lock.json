@@ -1,13 +1,12 @@
 {
   "dependencies": {
     "com.unity.ai.navigation": {
-      "version": "2.0.10",
+      "version": "file:com.unity.ai.navigation",
       "depth": 0,
-      "source": "registry",
+      "source": "embedded",
       "dependencies": {
         "com.unity.modules.ai": "1.0.0"
-      },
-      "url": "https://packages.unity.com"
+      }
     },
     "com.unity.burst": {
       "version": "1.8.28",

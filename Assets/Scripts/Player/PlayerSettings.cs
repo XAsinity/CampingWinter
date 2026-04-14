@@ -1,6 +1,10 @@
 using System;
 using System.IO;
 using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
+using UnityEngine.SceneManagement;
+using EngineShadowQuality = UnityEngine.ShadowQuality;
 
 public class PlayerSettings : MonoBehaviour
 {
@@ -11,7 +15,10 @@ public class PlayerSettings : MonoBehaviour
         public int targetFrameRate;
         public int qualityLevel;
         public int shadowQuality;
+        public bool enableMotionBlur;
         public float masterVolume;
+        public float menuMusicVolume;
+        public float mouseSensitivity;
     }
 
     [Header("Performance")]
@@ -20,10 +27,15 @@ public class PlayerSettings : MonoBehaviour
 
     [Header("Quality")]
     [SerializeField] int qualityLevel = 2;
-    [SerializeField] ShadowQuality shadowQuality = ShadowQuality.All;
+    [SerializeField] EngineShadowQuality shadowQuality = EngineShadowQuality.All;
+    [SerializeField] bool enableMotionBlur = true;
 
     [Header("Sound")]
     [SerializeField, Range(0f, 4f)] float masterVolume = 1f;
+    [SerializeField, Range(0f, 1f)] float menuMusicVolume = 0.75f;
+
+    [Header("Controls")]
+    [SerializeField, Range(0.2f, 8f)] float mouseSensitivity = 2f;
 
     [Header("Persistence")]
     [SerializeField] bool persistAcrossScenes = true;
@@ -52,16 +64,34 @@ public class PlayerSettings : MonoBehaviour
         set => qualityLevel = Mathf.Max(0, value);
     }
 
-    public ShadowQuality ShadowQualitySetting
+    public EngineShadowQuality ShadowQualitySetting
     {
         get => shadowQuality;
         set => shadowQuality = value;
+    }
+
+    public bool EnableMotionBlur
+    {
+        get => enableMotionBlur;
+        set => enableMotionBlur = value;
     }
 
     public float MasterVolume
     {
         get => masterVolume;
         set => masterVolume = Mathf.Clamp(value, 0f, 4f);
+    }
+
+    public float MenuMusicVolume
+    {
+        get => menuMusicVolume;
+        set => menuMusicVolume = Mathf.Clamp01(value);
+    }
+
+    public float MouseSensitivity
+    {
+        get => mouseSensitivity;
+        set => mouseSensitivity = Mathf.Clamp(value, 0.2f, 8f);
     }
 
     void Awake()
@@ -79,17 +109,34 @@ public class PlayerSettings : MonoBehaviour
 
         _settingsFilePath = Path.Combine(Application.persistentDataPath, "player-settings.json");
 
-        if (loadSavedSettingsOnStart)
-            LoadSettingsFromDisk();
+        LoadSettingsFromDisk();
     }
 
     void Start()
     {
+        if (Instance != this)
+            return;
+
         ApplyAllSettings(saveToDisk: false);
+    }
+
+    void OnEnable()
+    {
+        if (Instance == this)
+            SceneManager.sceneLoaded += HandleSceneLoaded;
+    }
+
+    void OnDisable()
+    {
+        if (Instance == this)
+            SceneManager.sceneLoaded -= HandleSceneLoaded;
     }
 
     void OnValidate()
     {
+        if (Instance != this)
+            return;
+
         if (!Application.isPlaying)
             return;
 
@@ -98,12 +145,18 @@ public class PlayerSettings : MonoBehaviour
 
     void OnApplicationPause(bool pauseStatus)
     {
+        if (Instance != this)
+            return;
+
         if (pauseStatus && saveOnApplicationPause)
             SaveSettingsToDisk();
     }
 
     void OnApplicationQuit()
     {
+        if (Instance != this)
+            return;
+
         SaveSettingsToDisk();
     }
 
@@ -111,7 +164,9 @@ public class PlayerSettings : MonoBehaviour
     {
         ApplyPerformanceSettings();
         ApplyQualitySettings();
+        ApplyVisualSettings();
         ApplySoundSettings();
+        ApplyControlSettings();
 
         if (saveToDisk)
             SaveSettingsToDisk();
@@ -144,11 +199,57 @@ public class PlayerSettings : MonoBehaviour
         QualitySettings.shadows = shadowQuality;
     }
 
+    void ApplyVisualSettings()
+    {
+        var volumes = FindObjectsByType<Volume>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        for (int i = 0; i < volumes.Length; i++)
+        {
+            Volume volume = volumes[i];
+            if (volume == null || volume.profile == null)
+                continue;
+
+            if (volume.profile.TryGet(out MotionBlur motionBlur) && motionBlur != null)
+                motionBlur.active = enableMotionBlur;
+        }
+    }
+
     void ApplySoundSettings()
     {
         float effectiveVolume = Mathf.Max(0f, masterVolume * 0.5f);
         AudioListener.volume = effectiveVolume;
         AudioListener.pause = false;
+
+        var audioSources = FindObjectsByType<AudioSource>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < audioSources.Length; i++)
+        {
+            AudioSource source = audioSources[i];
+            if (source == null)
+                continue;
+
+            if (source.GetComponent("MainMenuMusicController") == null)
+                continue;
+
+            source.volume = Mathf.Clamp01(menuMusicVolume);
+        }
+    }
+
+    void ApplyControlSettings()
+    {
+        var controllers = FindObjectsByType<FirstPersonController>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < controllers.Length; i++)
+        {
+            if (controllers[i] != null)
+                controllers[i].SetMouseSensitivity(mouseSensitivity);
+        }
+    }
+
+    void HandleSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        if (Instance != this)
+            return;
+
+        ApplyControlSettings();
+        ApplyVisualSettings();
     }
 
     public void SaveSettingsToDisk()
@@ -162,11 +263,26 @@ public class PlayerSettings : MonoBehaviour
             targetFrameRate = targetFrameRate,
             qualityLevel = qualityLevel,
             shadowQuality = (int)shadowQuality,
-            masterVolume = masterVolume
+            enableMotionBlur = enableMotionBlur,
+            masterVolume = masterVolume,
+            menuMusicVolume = menuMusicVolume,
+            mouseSensitivity = mouseSensitivity
         };
 
         string json = JsonUtility.ToJson(data, true);
-        File.WriteAllText(_settingsFilePath, json);
+        WriteJsonWithBackup(_settingsFilePath, json);
+    }
+
+    static void WriteJsonWithBackup(string path, string json)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        string backupPath = path + ".bak";
+        if (File.Exists(path))
+            File.Copy(path, backupPath, true);
+
+        File.WriteAllText(path, json);
     }
 
     public void LoadSettingsFromDisk()
@@ -188,10 +304,14 @@ public class PlayerSettings : MonoBehaviour
         enableVSync = data.enableVSync;
         targetFrameRate = Mathf.Max(30, data.targetFrameRate);
         qualityLevel = Mathf.Max(0, data.qualityLevel);
-        shadowQuality = Enum.IsDefined(typeof(ShadowQuality), data.shadowQuality)
-            ? (ShadowQuality)data.shadowQuality
-            : ShadowQuality.All;
+        shadowQuality = Enum.IsDefined(typeof(EngineShadowQuality), data.shadowQuality)
+            ? (EngineShadowQuality)data.shadowQuality
+            : EngineShadowQuality.All;
+        if (json.Contains("\"enableMotionBlur\""))
+            enableMotionBlur = data.enableMotionBlur;
         masterVolume = Mathf.Clamp(data.masterVolume, 0f, 4f);
+        menuMusicVolume = data.menuMusicVolume < 0f ? 0.75f : Mathf.Clamp01(data.menuMusicVolume);
+        mouseSensitivity = data.mouseSensitivity <= 0f ? 2f : Mathf.Clamp(data.mouseSensitivity, 0.2f, 8f);
     }
 
     [ContextMenu("Delete Saved Settings File")]

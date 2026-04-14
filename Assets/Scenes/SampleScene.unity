@@ -980,7 +980,8 @@ MonoBehaviour:
       m_Calls: []
   returnToMenuOnNightCompleted: 1
   resetToDayOneOnNightCompleted: 0
-  mainMenu: {fileID: 0}
+  activeSaveSlotIndex: 0
+  saveFileName: save-slots.json
   fullResetOnPlayerDeath: 1
   onPlayerDied:
     m_PersistentCalls:
@@ -988,6 +989,7 @@ MonoBehaviour:
   onPlayerDiedBy:
     m_PersistentCalls:
       m_Calls: []
+  debugIgnorePlayerDeath: 0
   showDayTitleOnNightStart: 1
   dayTitlePrefix: 'Night '
   dayTitleFormatOverride: 
@@ -1027,7 +1029,7 @@ MonoBehaviour:
       m_PostInfinity: 2
       m_RotationOrder: 4
   day2:
-    requiredClosedEyesSeconds: 600
+    requiredClosedEyesSeconds: 425
     sleepProgressDecayPerSecond: 0.02
     baseDifficultyMultiplier: 1.2
     flashlightDrainScale: 1.2
@@ -1056,7 +1058,7 @@ MonoBehaviour:
       m_PostInfinity: 2
       m_RotationOrder: 4
   day3:
-    requiredClosedEyesSeconds: 900
+    requiredClosedEyesSeconds: 500
     sleepProgressDecayPerSecond: 0.04
     baseDifficultyMultiplier: 1.4
     flashlightDrainScale: 1.4
@@ -1103,63 +1105,6 @@ MonoBehaviour:
     legacyTriggerOnce: 1
   day2NightEvents: []
   day3NightEvents: []
---- !u!1001 &289173139
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 0}
-    m_Modifications:
-    - target: {fileID: -8679921383154817045, guid: 8f8f45a6b9e737847adde28040af1d2a, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: -6.015
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 8f8f45a6b9e737847adde28040af1d2a, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 1.681
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 8f8f45a6b9e737847adde28040af1d2a, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: -5.456
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 8f8f45a6b9e737847adde28040af1d2a, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 0.7071068
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 8f8f45a6b9e737847adde28040af1d2a, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: -0.7071068
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 8f8f45a6b9e737847adde28040af1d2a, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 8f8f45a6b9e737847adde28040af1d2a, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: -0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 8f8f45a6b9e737847adde28040af1d2a, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 8f8f45a6b9e737847adde28040af1d2a, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 8f8f45a6b9e737847adde28040af1d2a, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 919132149155446097, guid: 8f8f45a6b9e737847adde28040af1d2a, type: 3}
-      propertyPath: m_Name
-      value: Meshy_AI_Campfire_Ready_0410225952_texture
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 8f8f45a6b9e737847adde28040af1d2a, type: 3}
 --- !u!1 &309251739 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: f89b17440ce8a9b48bc0a7848f51c858, type: 3}
@@ -1283,7 +1228,7 @@ MonoBehaviour:
   radioSource: {fileID: 309251743}
   radioSong: {fileID: 8300000, guid: 455812b1c76b246498a6e0ff347e0bd1, type: 3}
   songStartTimeSeconds: 3.5
-  volume: 0.523
+  volume: 0.425
   interactionPromptWhenOn: Turn off radio
   interactionPromptWhenFindHer: Find Her
 --- !u!136 &309251745
@@ -3291,6 +3236,71 @@ PrefabInstance:
       insertIndex: -1
       addedObject: {fileID: 309251743}
   m_SourcePrefab: {fileID: 100100000, guid: f89b17440ce8a9b48bc0a7848f51c858, type: 3}
+--- !u!1 &1113043415
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1113043417}
+  - component: {fileID: 1113043416}
+  m_Layer: 0
+  m_Name: PauseSettings
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1113043416
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1113043415}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1ee0c2ebf566db54381fe32d2e1956c2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GameplayPauseMenu
+  togglePauseKey: 60
+  pauseTimeScale: 1
+  loadMainMenuSceneOnQuit: 1
+  mainMenuSceneName: MainMenu
+  pauseAllAudio: 1
+  pauseTitle: Paused
+  resumeText: Resume
+  settingsText: Settings
+  quitText: Quit To Menu
+  backText: Back
+  uiFontOverride: {fileID: 0}
+  panelTint: {r: 0, g: 0, b: 0, a: 0.78}
+  primaryButtonTint: {r: 0.2, g: 0.4, b: 0.26, a: 0.95}
+  secondaryButtonTint: {r: 0.16, g: 0.23, b: 0.35, a: 0.95}
+  titleTextColor: {r: 0.86, g: 0.94, b: 1, a: 1}
+  bodyTextColor: {r: 0.92, g: 0.96, b: 1, a: 0.95}
+  panelSprite: {fileID: 0}
+  primaryButtonSprite: {fileID: 0}
+  secondaryButtonSprite: {fileID: 0}
+  fieldBackgroundSprite: {fileID: 0}
+  sliderFillSprite: {fileID: 0}
+--- !u!4 &1113043417
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1113043415}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -3.12691, y: 1.31279, z: -0.36443}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1122248542
 GameObject:
   m_ObjectHideFlags: 0
@@ -4208,11 +4218,11 @@ MonoBehaviour:
   - {fileID: 781048315}
   - {fileID: 555164464}
   breathingClips:
-  - {fileID: 8300000, guid: fa243127e9ddd3e4189ada46e81a09f3, type: 3}
+  - {fileID: 8300000, guid: f7251bbdf3035ea48b17b1e5427ce3de, type: 3}
   minBreathCount: 1
   maxBreathCount: 1
-  minBreathVolume: 0.261
-  maxBreathVolume: 1
+  minBreathVolume: 0.023
+  maxBreathVolume: 0.126
   scaleBreathVolumeByNightDifficulty: 1
   difficultyVolumeReductionPerMultiplier: 0.03
   minBreathVolumeMultiplier: 0.85
@@ -4220,14 +4230,10 @@ MonoBehaviour:
   maxBreathPitch: 1.05
   behindSpeakerDistance: 0
   verticalOffset: 0
-  flashlightResponseWindowSeconds: 2
-  scaleResponseWindowByNightDifficulty: 1
-  difficultyResponseReductionPerMultiplier: 0.25
-  minResponseWindowMultiplier: 0.45
   failIfPlayerLeavesBed: 1
+  requiredContinuousSpotSeconds: 0.095
   maxDetectionDistance: 20
   extraAnglePadding: 2
-  requiredContinuousSpotSeconds: 0.095
   requireDirectRaycastHit: 1
   visibilityMask:
     serializedVersion: 2
@@ -4236,10 +4242,11 @@ MonoBehaviour:
   successForcedOffSeconds: 0.25
   successRecoveryFlickerSeconds: 0.9
   successRecoveryFlickerSpeed: 16
+  monsterAudioSource: {fileID: 0}
+  spottedClip: {fileID: 0}
+  spottedVolume: 1
+  spottedPitch: 1
   onHuntStarted:
-    m_PersistentCalls:
-      m_Calls: []
-  onBreathingEnded:
     m_PersistentCalls:
       m_Calls: []
   onHuntSucceeded:
@@ -4250,8 +4257,6 @@ MonoBehaviour:
       m_Calls: []
   liveHuntActive: 0
   livePhase: 
-  liveResponseWindowRemaining: 0
-  liveCurrentResponseWindow: 0
 --- !u!1 &1825738339
 GameObject:
   m_ObjectHideFlags: 0
@@ -4549,10 +4554,10 @@ SceneRoots:
   - {fileID: 462639289}
   - {fileID: 112585749}
   - {fileID: 2110697061}
-  - {fileID: 289173139}
   - {fileID: 1662069835}
   - {fileID: 216096140}
   - {fileID: 504684570}
   - {fileID: 781048314}
   - {fileID: 555164463}
   - {fileID: 1808962142}
+  - {fileID: 1113043417}

@@ -1,15 +1,19 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 public class TemporaryMainMenu : MonoBehaviour
 {
+    static TemporaryMainMenu _instance;
+
     [Serializable]
     class SaveSlotData
     {
@@ -43,6 +47,8 @@ public class TemporaryMainMenu : MonoBehaviour
     [SerializeField] bool pauseTimeWhileMenuOpen = true;
     [SerializeField] bool lockCursorOnPlay = true;
     [SerializeField, Min(0f)] float postLoadBufferSeconds = 3f;
+    [SerializeField] bool enableDebugMenuVisibilityToggle = true;
+    [SerializeField] Key debugMenuVisibilityToggleKey = Key.F10;
 
     [Header("Scene Transition")]
     [SerializeField] bool loadGameplaySceneOnPlay = true;
@@ -63,6 +69,7 @@ public class TemporaryMainMenu : MonoBehaviour
     [SerializeField] string gameTitle = "Camping Winter";
     [SerializeField] string playButtonText = "Play";
     [SerializeField] string settingsButtonText = "Settings";
+    [SerializeField] string quitButtonText = "Quit";
     [SerializeField] string backButtonText = "Back";
     [SerializeField] string saveSelectTitle = "Select Save";
 
@@ -105,10 +112,15 @@ public class TemporaryMainMenu : MonoBehaviour
     Text _loadingStatusText;
 
     Toggle _settingsVSyncToggle;
+    Toggle _settingsMotionBlurToggle;
     Slider _settingsFpsSlider;
     Text _settingsFpsValueText;
     Slider _settingsMasterVolumeSlider;
     Text _settingsMasterValueText;
+    Slider _settingsMenuMusicVolumeSlider;
+    Text _settingsMenuMusicValueText;
+    Slider _settingsMouseSensitivitySlider;
+    Text _settingsMouseSensitivityValueText;
 
     Text[] _saveSlotInfoTexts;
     Button[] _saveSlotLoadButtons;
@@ -126,12 +138,51 @@ public class TemporaryMainMenu : MonoBehaviour
     FirstPersonController _runtimeController;
     PlayerInteraction _runtimeInteraction;
     PlayerFlashlight _runtimeFlashlight;
+    bool _menuHiddenByDebug;
 
     void Awake()
     {
+        if (_instance != null && _instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        _instance = this;
+
         _menuSaveFilePath = System.IO.Path.Combine(Application.persistentDataPath, "save-slots.json");
         LoadMenuSaveData();
         ShowMenuState();
+    }
+
+    void Update()
+    {
+        if (!enableDebugMenuVisibilityToggle)
+            return;
+
+        if (_hasStartedGame || _menuCanvasObject == null)
+            return;
+
+        var keyboard = Keyboard.current;
+        if (keyboard == null)
+            return;
+
+        if (!keyboard[debugMenuVisibilityToggleKey].wasPressedThisFrame)
+            return;
+
+        SetMenuUiHiddenByDebug(!_menuHiddenByDebug);
+    }
+
+    public bool IsMenuUiHiddenByDebug => _menuHiddenByDebug;
+
+    public void SetMenuUiHiddenByDebug(bool hidden)
+    {
+        _menuHiddenByDebug = hidden;
+
+        if (_menuCanvasObject != null)
+            _menuCanvasObject.SetActive(!_menuHiddenByDebug);
+
+        Cursor.visible = !_menuHiddenByDebug;
     }
 
     void OnEnable()
@@ -146,11 +197,19 @@ public class TemporaryMainMenu : MonoBehaviour
 
     void OnDestroy()
     {
+        FlushSettingsIfOpen();
+
         if (_hasStartedGame)
             return;
 
         if (pauseTimeWhileMenuOpen)
             Time.timeScale = 1f;
+    }
+
+    void FlushSettingsIfOpen()
+    {
+        if (_currentScreen == MenuScreen.Settings)
+            ApplySettingsFromUi();
     }
 
     public void StartGame()
@@ -349,6 +408,13 @@ public class TemporaryMainMenu : MonoBehaviour
         if (_menuCanvasObject == null)
             BuildTemporaryMenuUi();
 
+        if (_menuCanvasObject != null)
+            _menuCanvasObject.SetActive(true);
+
+        SetMenuUiHiddenByDebug(false);
+
+        CleanupDuplicateMenuCanvases();
+
         ShowMainScreen();
         EnsureMenuCameraIfNeeded();
 
@@ -361,6 +427,9 @@ public class TemporaryMainMenu : MonoBehaviour
 
     void ShowMainScreen()
     {
+        if (_currentScreen == MenuScreen.Settings)
+            ApplySettingsFromUi();
+
         _currentScreen = MenuScreen.Main;
         SetMenuVisualState(showMain: true, showSettings: false, showSaveSelect: false, showLoading: false);
     }
@@ -443,6 +512,7 @@ public class TemporaryMainMenu : MonoBehaviour
         EnsureEventSystem();
 
         _menuCanvasObject = new GameObject("TemporaryMainMenuCanvas");
+        _menuCanvasObject.transform.SetParent(transform, false);
 
         var canvas = _menuCanvasObject.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
@@ -473,6 +543,19 @@ public class TemporaryMainMenu : MonoBehaviour
 
         CreateButton("SettingsButton", _mainPanelObject.transform, settingsButtonText, secondaryButtonSprite, secondaryButtonTint,
             new Vector2(0.5f, 0.43f), new Vector2(260f, 56f), ShowSettingsScreen, font);
+
+        CreateButton("QuitButton", _mainPanelObject.transform, quitButtonText, dangerButtonSprite, dangerButtonTint,
+            new Vector2(0.5f, 0.34f), new Vector2(260f, 56f), QuitGame, font);
+    }
+
+    void QuitGame()
+    {
+        Time.timeScale = 1f;
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
     }
 
     void BuildSettingsPanel()
@@ -484,26 +567,41 @@ public class TemporaryMainMenu : MonoBehaviour
             new Vector2(0.5f, 0.72f), new Vector2(700f, 80f));
 
         _settingsVSyncToggle = CreateToggleRow(_settingsPanelObject.transform, "VSync", new Vector2(0.5f, 0.60f), font);
+        _settingsMotionBlurToggle = CreateToggleRow(_settingsPanelObject.transform, "Motion Blur", new Vector2(0.5f, 0.52f), font);
 
-        _settingsFpsSlider = CreateSliderRow(_settingsPanelObject.transform, "Frame Rate", new Vector2(0.5f, 0.52f), out _settingsFpsValueText, font, 30f, 240f, true);
+        _settingsFpsSlider = CreateSliderRow(_settingsPanelObject.transform, "Frame Rate", new Vector2(0.5f, 0.44f), out _settingsFpsValueText, font, 30f, 240f, true);
         _settingsFpsSlider.onValueChanged.AddListener(_ =>
         {
             if (_settingsFpsValueText != null)
                 _settingsFpsValueText.text = $"{Mathf.RoundToInt(_settingsFpsSlider.value)} FPS";
         });
 
-        _settingsMasterVolumeSlider = CreateSliderRow(_settingsPanelObject.transform, "Master Volume", new Vector2(0.5f, 0.44f), out _settingsMasterValueText, font, 0f, 4f, false);
+        _settingsMasterVolumeSlider = CreateSliderRow(_settingsPanelObject.transform, "Master Volume", new Vector2(0.5f, 0.36f), out _settingsMasterValueText, font, 0f, 4f, false);
         _settingsMasterVolumeSlider.onValueChanged.AddListener(_ =>
         {
             if (_settingsMasterValueText != null)
                 _settingsMasterValueText.text = _settingsMasterVolumeSlider.value.ToString("0.00");
         });
 
+        _settingsMenuMusicVolumeSlider = CreateSliderRow(_settingsPanelObject.transform, "Menu Music Volume", new Vector2(0.5f, 0.28f), out _settingsMenuMusicValueText, font, 0f, 1f, false);
+        _settingsMenuMusicVolumeSlider.onValueChanged.AddListener(_ =>
+        {
+            if (_settingsMenuMusicValueText != null)
+                _settingsMenuMusicValueText.text = _settingsMenuMusicVolumeSlider.value.ToString("0.00");
+        });
+
+        _settingsMouseSensitivitySlider = CreateSliderRow(_settingsPanelObject.transform, "Mouse Sensitivity", new Vector2(0.5f, 0.20f), out _settingsMouseSensitivityValueText, font, 0.2f, 8f, false);
+        _settingsMouseSensitivitySlider.onValueChanged.AddListener(_ =>
+        {
+            if (_settingsMouseSensitivityValueText != null)
+                _settingsMouseSensitivityValueText.text = _settingsMouseSensitivitySlider.value.ToString("0.00");
+        });
+
         CreateButton("ApplySettingsButton", _settingsPanelObject.transform, "Apply", primaryButtonSprite, primaryButtonTint,
-            new Vector2(0.42f, 0.30f), new Vector2(180f, 52f), ApplySettingsFromUi, font);
+            new Vector2(0.42f, 0.12f), new Vector2(180f, 52f), ApplySettingsFromUi, font);
 
         CreateButton("BackFromSettingsButton", _settingsPanelObject.transform, backButtonText, secondaryButtonSprite, secondaryButtonTint,
-            new Vector2(0.58f, 0.30f), new Vector2(180f, 52f), ShowMainScreen, font);
+            new Vector2(0.58f, 0.12f), new Vector2(180f, 52f), ShowMainScreen, font);
     }
 
     void BuildSaveSelectPanel()
@@ -791,6 +889,9 @@ public class TemporaryMainMenu : MonoBehaviour
         if (_settingsVSyncToggle != null)
             _settingsVSyncToggle.isOn = settings.EnableVSync;
 
+        if (_settingsMotionBlurToggle != null)
+            _settingsMotionBlurToggle.isOn = settings.EnableMotionBlur;
+
         if (_settingsFpsSlider != null)
         {
             _settingsFpsSlider.value = settings.TargetFrameRate;
@@ -804,6 +905,20 @@ public class TemporaryMainMenu : MonoBehaviour
             if (_settingsMasterValueText != null)
                 _settingsMasterValueText.text = settings.MasterVolume.ToString("0.00");
         }
+
+        if (_settingsMenuMusicVolumeSlider != null)
+        {
+            _settingsMenuMusicVolumeSlider.value = settings.MenuMusicVolume;
+            if (_settingsMenuMusicValueText != null)
+                _settingsMenuMusicValueText.text = settings.MenuMusicVolume.ToString("0.00");
+        }
+
+        if (_settingsMouseSensitivitySlider != null)
+        {
+            _settingsMouseSensitivitySlider.value = settings.MouseSensitivity;
+            if (_settingsMouseSensitivityValueText != null)
+                _settingsMouseSensitivityValueText.text = settings.MouseSensitivity.ToString("0.00");
+        }
     }
 
     void ApplySettingsFromUi()
@@ -815,11 +930,20 @@ public class TemporaryMainMenu : MonoBehaviour
         if (_settingsVSyncToggle != null)
             settings.EnableVSync = _settingsVSyncToggle.isOn;
 
+        if (_settingsMotionBlurToggle != null)
+            settings.EnableMotionBlur = _settingsMotionBlurToggle.isOn;
+
         if (_settingsFpsSlider != null)
             settings.TargetFrameRate = Mathf.RoundToInt(_settingsFpsSlider.value);
 
         if (_settingsMasterVolumeSlider != null)
             settings.MasterVolume = _settingsMasterVolumeSlider.value;
+
+        if (_settingsMenuMusicVolumeSlider != null)
+            settings.MenuMusicVolume = _settingsMenuMusicVolumeSlider.value;
+
+        if (_settingsMouseSensitivitySlider != null)
+            settings.MouseSensitivity = _settingsMouseSensitivitySlider.value;
 
         settings.ApplyAndSave();
         RefreshSettingsUi();
@@ -888,12 +1012,9 @@ public class TemporaryMainMenu : MonoBehaviour
             int night = nightSystem != null ? nightSystem.GetSaveSlotCurrentNight(i) : Mathf.Max(1, _menuSaveData.slots[i].currentNight);
             int deaths = nightSystem != null ? nightSystem.GetSaveSlotDeathCount(i) : Mathf.Max(0, _menuSaveData.slots[i].deathCount);
             string createdRaw = nightSystem != null ? nightSystem.GetSaveSlotCreatedAtUtc(i) : (_menuSaveData.slots[i].createdAtUtc ?? string.Empty);
+            string createdDisplay = NormalizeToLocalDisplayTime(createdRaw);
 
-            string created = createdRaw;
-            if (DateTime.TryParse(createdRaw, out DateTime parsed))
-                created = parsed.ToLocalTime().ToString("g");
-
-            _saveSlotInfoTexts[i].text = $"Save {i + 1}: Night {night}  |  Deaths {deaths}  |  Created {created}";
+            _saveSlotInfoTexts[i].text = $"Save {i + 1}: Night {night}  |  Deaths {deaths}  |  Created {createdDisplay}";
             SetButtonText(_saveSlotLoadButtons[i], "Load");
             _saveSlotDeleteButtons[i].interactable = true;
         }
@@ -930,7 +1051,19 @@ public class TemporaryMainMenu : MonoBehaviour
 
         _menuSaveData.activeSlotIndex = Mathf.Clamp(_menuSaveData.activeSlotIndex, 0, 2);
         string json = JsonUtility.ToJson(_menuSaveData, true);
-        System.IO.File.WriteAllText(_menuSaveFilePath, json);
+        WriteJsonWithBackup(_menuSaveFilePath, json);
+    }
+
+    static void WriteJsonWithBackup(string path, string json)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        string backupPath = path + ".bak";
+        if (System.IO.File.Exists(path))
+            System.IO.File.Copy(path, backupPath, true);
+
+        System.IO.File.WriteAllText(path, json);
     }
 
     bool HasMenuSaveSlotData(int slotIndex)
@@ -953,7 +1086,7 @@ public class TemporaryMainMenu : MonoBehaviour
         if (HasMenuSaveSlotData(slotIndex))
             return;
 
-        string now = DateTime.UtcNow.ToString("O");
+        string now = DateTime.Now.ToString("g");
         _menuSaveData.slots[slotIndex] = new SaveSlotData
         {
             hasData = true,
@@ -964,6 +1097,40 @@ public class TemporaryMainMenu : MonoBehaviour
         };
 
         SaveMenuSaveData();
+    }
+
+    static string NormalizeToLocalDisplayTime(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return string.Empty;
+
+        if (raw.Contains("Z") || raw.Contains("+") || raw.Contains("GMT") || raw.Contains("UTC"))
+        {
+            if (DateTimeOffset.TryParse(raw, CultureInfo.CurrentCulture, DateTimeStyles.AssumeUniversal, out DateTimeOffset offset))
+                return offset.ToLocalTime().ToString("g");
+
+            if (DateTime.TryParse(raw, CultureInfo.CurrentCulture, DateTimeStyles.AssumeUniversal, out DateTime utcDate))
+                return utcDate.ToLocalTime().ToString("g");
+        }
+
+        if (DateTime.TryParse(raw, out DateTime localDate))
+            return localDate.ToString("g");
+
+        return raw;
+    }
+
+    void CleanupDuplicateMenuCanvases()
+    {
+        var canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        for (int i = 0; i < canvases.Length; i++)
+        {
+            Canvas canvas = canvases[i];
+            if (canvas == null || canvas.gameObject == _menuCanvasObject)
+                continue;
+
+            if (canvas.name == "TemporaryMainMenuCanvas")
+                Destroy(canvas.gameObject);
+        }
     }
 
     void SetButtonText(Button button, string text)

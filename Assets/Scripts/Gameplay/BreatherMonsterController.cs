@@ -8,8 +8,7 @@ public class BreatherMonsterController : MonoBehaviour
     enum HuntPhase
     {
         Idle,
-        Breathing,
-        ResponseWindow
+        Breathing
     }
 
     [Header("References")]
@@ -58,17 +57,13 @@ public class BreatherMonsterController : MonoBehaviour
     [SerializeField] float behindSpeakerDistance = 0.2f;
     [SerializeField] float verticalOffset = 0f;
 
-    [Header("Response Window")]
-    [SerializeField, Min(0.05f)] float flashlightResponseWindowSeconds = 1.25f;
-    [SerializeField] bool scaleResponseWindowByNightDifficulty = true;
-    [SerializeField, Range(0f, 1f)] float difficultyResponseReductionPerMultiplier = 0.25f;
-    [SerializeField, Range(0.05f, 1f)] float minResponseWindowMultiplier = 0.45f;
+    [Header("Flashlight Response During Breathing")]
     [SerializeField] bool failIfPlayerLeavesBed = true;
+    [SerializeField, Min(0f)] float requiredContinuousSpotSeconds = 0.1f;
 
     [Header("Flashlight Check")]
     [SerializeField, Min(0.5f)] float maxDetectionDistance = 20f;
     [SerializeField, Min(0f)] float extraAnglePadding = 2f;
-    [SerializeField, Min(0f)] float requiredContinuousSpotSeconds = 0.1f;
     [SerializeField] bool requireDirectRaycastHit = true;
     [SerializeField] LayerMask visibilityMask = ~0;
 
@@ -78,17 +73,20 @@ public class BreatherMonsterController : MonoBehaviour
     [SerializeField, Min(0f)] float successRecoveryFlickerSeconds = 0.9f;
     [SerializeField, Min(0.01f)] float successRecoveryFlickerSpeed = 16f;
 
+    [Header("Audio Hooks")]
+    [SerializeField] AudioSource monsterAudioSource;
+    [SerializeField] AudioClip spottedClip;
+    [SerializeField, Range(0f, 1f)] float spottedVolume = 1f;
+    [SerializeField, Range(0.1f, 3f)] float spottedPitch = 1f;
+
     [Header("Events")]
     [SerializeField] UnityEvent onHuntStarted;
-    [SerializeField] UnityEvent onBreathingEnded;
     [SerializeField] UnityEvent onHuntSucceeded;
     [SerializeField] UnityEvent onHuntFailed;
 
     [Header("Runtime Debug")]
     [SerializeField] bool liveHuntActive;
     [SerializeField] string livePhase;
-    [SerializeField] float liveResponseWindowRemaining;
-    [SerializeField] float liveCurrentResponseWindow;
 
     PlayerSleepSystem _sleepSystem;
     PlayerFlashlight _flashlight;
@@ -97,7 +95,6 @@ public class BreatherMonsterController : MonoBehaviour
     HuntPhase _phase;
     AudioSource _activeSpeaker;
     int _remainingBreathClips;
-    float _responseWindowRemaining;
     float _spotTimer;
     float _nextAutoHuntCheckTime;
     bool _wasInBedLastFrame;
@@ -117,6 +114,9 @@ public class BreatherMonsterController : MonoBehaviour
         if (_flashlight == null)
             _flashlight = FindFirstObjectByType<PlayerFlashlight>();
 
+        if (monsterAudioSource == null)
+            monsterAudioSource = GetComponent<AudioSource>();
+
         SetMonsterVisible(false);
         _phase = HuntPhase.Idle;
         _nextAutoHuntCheckTime = 0f;
@@ -126,7 +126,6 @@ public class BreatherMonsterController : MonoBehaviour
     {
         liveHuntActive = _phase != HuntPhase.Idle;
         livePhase = _phase.ToString();
-        liveResponseWindowRemaining = _phase == HuntPhase.ResponseWindow ? _responseWindowRemaining : 0f;
 
         TrackBedEntryState();
 
@@ -142,22 +141,7 @@ public class BreatherMonsterController : MonoBehaviour
             return;
         }
 
-        if (_phase == HuntPhase.Breathing)
-        {
-            UpdateBreathingPhase();
-            if (_phase != HuntPhase.Breathing)
-                return;
-
-            if (IsBreathingAudioActive() && IsMonsterInFlashlightView())
-            {
-                FailHunt("Flashlight too soon");
-                return;
-            }
-
-            return;
-        }
-
-        UpdateResponseWindowPhase();
+        UpdateBreathingPhase();
     }
 
     void TrackBedEntryState()
@@ -258,7 +242,6 @@ public class BreatherMonsterController : MonoBehaviour
         _phase = HuntPhase.Idle;
         _activeSpeaker = null;
         _remainingBreathClips = 0;
-        _responseWindowRemaining = 0f;
         _spotTimer = 0f;
         _nextAutoHuntCheckTime = 0f;
         _wasInBedLastFrame = false;
@@ -275,8 +258,24 @@ public class BreatherMonsterController : MonoBehaviour
             return;
         }
 
-        if (_activeSpeaker.isPlaying)
+        if (IsBreathingAudioActive())
+        {
+            if (IsMonsterInFlashlightView())
+            {
+                _spotTimer += Time.deltaTime;
+                if (_spotTimer >= requiredContinuousSpotSeconds)
+                {
+                    SucceedHunt();
+                    return;
+                }
+            }
+            else
+            {
+                _spotTimer = 0f;
+            }
+
             return;
+        }
 
         if (_remainingBreathClips > 0)
         {
@@ -284,50 +283,16 @@ public class BreatherMonsterController : MonoBehaviour
             return;
         }
 
-        _phase = HuntPhase.ResponseWindow;
-        _responseWindowRemaining = GetResponseWindowSeconds();
-        liveCurrentResponseWindow = _responseWindowRemaining;
-        _spotTimer = 0f;
-        onBreathingEnded?.Invoke();
-    }
-
-    float GetResponseWindowSeconds()
-    {
-        if (!scaleResponseWindowByNightDifficulty)
-            return flashlightResponseWindowSeconds;
-
-        NightSystem nightSystem = nightSystemOverride != null ? nightSystemOverride : NightSystem.Instance;
-        float difficultyMultiplier = nightSystem != null ? nightSystem.DifficultyMultiplier : 1f;
-
-        float reduction = Mathf.Max(0f, difficultyMultiplier - 1f) * difficultyResponseReductionPerMultiplier;
-        float multiplier = Mathf.Clamp(1f - reduction, minResponseWindowMultiplier, 1f);
-        return flashlightResponseWindowSeconds * multiplier;
-    }
-
-    void UpdateResponseWindowPhase()
-    {
-        _responseWindowRemaining -= Time.deltaTime;
-        if (_responseWindowRemaining <= 0f)
-        {
-            FailHunt("Too late");
-            return;
-        }
-
-        if (!IsMonsterInFlashlightView())
-        {
-            _spotTimer = 0f;
-            return;
-        }
-
-        _spotTimer += Time.deltaTime;
-        if (_spotTimer < requiredContinuousSpotSeconds)
-            return;
-
-        SucceedHunt();
+        FailHunt("Missed breathing window");
     }
 
     void SucceedHunt()
     {
+        if (_activeSpeaker != null && _activeSpeaker.isPlaying)
+            _activeSpeaker.Stop();
+
+        PlayHookClip(spottedClip, spottedVolume, spottedPitch);
+
         if (_flashlight == null)
             _flashlight = flashlightOverride != null ? flashlightOverride : FindFirstObjectByType<PlayerFlashlight>();
 
@@ -336,6 +301,19 @@ public class BreatherMonsterController : MonoBehaviour
 
         onHuntSucceeded?.Invoke();
         EndCurrentHuntCycle();
+    }
+
+    void PlayHookClip(AudioClip clip, float volume, float pitch)
+    {
+        if (clip == null)
+            return;
+
+        AudioSource source = monsterAudioSource != null ? monsterAudioSource : _activeSpeaker;
+        if (source == null)
+            return;
+
+        source.pitch = pitch;
+        source.PlayOneShot(clip, volume);
     }
 
     void FailHunt(string reason)
@@ -351,10 +329,12 @@ public class BreatherMonsterController : MonoBehaviour
 
     void EndCurrentHuntCycle()
     {
+        if (_activeSpeaker != null && _activeSpeaker.isPlaying)
+            _activeSpeaker.Stop();
+
         _phase = HuntPhase.Idle;
         _activeSpeaker = null;
         _remainingBreathClips = 0;
-        _responseWindowRemaining = 0f;
         _spotTimer = 0f;
         SetMonsterVisible(false);
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.Serialization;
@@ -120,7 +121,6 @@ public class NightSystem : MonoBehaviour
     [Header("Night Completion Flow")]
     [SerializeField] bool returnToMenuOnNightCompleted = true;
     [SerializeField] bool resetToDayOneOnNightCompleted = true;
-    [SerializeField] TemporaryMainMenu mainMenu;
 
     [Header("Persistent Save")]
     [SerializeField, Range(0, 2)] int activeSaveSlotIndex = 0;
@@ -130,6 +130,9 @@ public class NightSystem : MonoBehaviour
     [SerializeField] bool fullResetOnPlayerDeath = true;
     [SerializeField] UnityEvent onPlayerDied;
     [SerializeField] PlayerDeathEvent onPlayerDiedBy;
+
+    [Header("Debug (Dev)")]
+    [SerializeField] bool debugIgnorePlayerDeath;
 
     [Header("Day Title Popup")]
     [SerializeField] bool showDayTitleOnNightStart = true;
@@ -187,6 +190,7 @@ public class NightSystem : MonoBehaviour
     string _saveFilePath;
 
     public int ActiveSaveSlotIndex => activeSaveSlotIndex;
+    public string SaveFilePath => _saveFilePath;
     public bool IsNightRunning => _isNightRunning;
     public NightDay CurrentDay => currentDay;
     public float NightProgress => sleepSystem != null ? sleepSystem.SleepProgress01 : 0f;
@@ -213,10 +217,7 @@ public class NightSystem : MonoBehaviour
         if (sleepSystem == null)
             sleepSystem = FindFirstObjectByType<PlayerSleepSystem>();
 
-        if (mainMenu == null)
-            mainMenu = FindFirstObjectByType<TemporaryMainMenu>();
-
-        _saveFilePath = System.IO.Path.Combine(Application.persistentDataPath, saveFileName);
+        EnsureSaveFilePath();
         LoadSaveDataFromDisk();
         activeSaveSlotIndex = Mathf.Clamp(_saveData.activeSlotIndex, 0, 2);
         EnsureSaveSlotExists(activeSaveSlotIndex);
@@ -273,6 +274,19 @@ public class NightSystem : MonoBehaviour
             if (breathers[i] != null)
                 breathers[i].ResetForNightStart();
         }
+
+        var behaviours = FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None);
+        for (int i = 0; i < behaviours.Length; i++)
+        {
+            MonoBehaviour behaviour = behaviours[i];
+            if (behaviour == null)
+                continue;
+
+            if (behaviour.GetType().Name != "LumberjackMonsterController")
+                continue;
+
+            behaviour.SendMessage("ResetForNightStart", SendMessageOptions.DontRequireReceiver);
+        }
     }
 
     void CompleteNight()
@@ -282,11 +296,17 @@ public class NightSystem : MonoBehaviour
 
         if (resetToDayOneOnNightCompleted)
             currentDay = NightDay.Day1;
+        else
+            currentDay = GetNextDay(currentDay);
 
         PushDayToSession();
 
-        if (returnToMenuOnNightCompleted && mainMenu != null)
-            mainMenu.ReturnToMenu();
+        if (returnToMenuOnNightCompleted)
+        {
+            TemporaryMainMenu menu = GetMainMenu();
+            if (menu != null)
+                menu.ReturnToMenu();
+        }
     }
 
     public void StopNight()
@@ -296,6 +316,9 @@ public class NightSystem : MonoBehaviour
 
     public void HandlePlayerDeath(string killerId)
     {
+        if (debugIgnorePlayerDeath)
+            return;
+
         if (_hasProcessedDeathThisNight)
             return;
 
@@ -308,9 +331,7 @@ public class NightSystem : MonoBehaviour
         onPlayerDied?.Invoke();
         onPlayerDiedBy?.Invoke(LastKillerId);
 
-        if (mainMenu == null)
-            mainMenu = FindFirstObjectByType<TemporaryMainMenu>();
-
+        TemporaryMainMenu mainMenu = GetMainMenu();
         if (mainMenu == null)
             return;
 
@@ -554,7 +575,7 @@ public class NightSystem : MonoBehaviour
 
         SaveSlotData slot = _saveData.slots[activeSaveSlotIndex];
         slot.currentNight = (int)currentDay;
-        slot.lastSavedAtUtc = DateTime.UtcNow.ToString("O");
+        slot.lastSavedAtUtc = DateTime.Now.ToString("g");
         _saveData.activeSlotIndex = activeSaveSlotIndex;
         SaveSaveDataToDisk();
     }
@@ -565,7 +586,7 @@ public class NightSystem : MonoBehaviour
 
         SaveSlotData slot = _saveData.slots[activeSaveSlotIndex];
         slot.deathCount = Mathf.Max(0, slot.deathCount + 1);
-        slot.lastSavedAtUtc = DateTime.UtcNow.ToString("O");
+        slot.lastSavedAtUtc = DateTime.Now.ToString("g");
         SaveSaveDataToDisk();
     }
 
@@ -603,7 +624,7 @@ public class NightSystem : MonoBehaviour
         if (slotIndex < 0 || slotIndex > 2)
             return;
 
-        string now = DateTime.UtcNow.ToString("O");
+        string now = DateTime.Now.ToString("g");
         SaveSlotData slot = _saveData.slots[slotIndex] ?? new SaveSlotData();
         slot.hasData = true;
         slot.currentNight = Mathf.Max(1, startingNight);
@@ -663,6 +684,8 @@ public class NightSystem : MonoBehaviour
 
     void LoadSaveDataFromDisk()
     {
+        EnsureSaveFilePath();
+
         if (System.IO.File.Exists(_saveFilePath))
         {
             string json = System.IO.File.ReadAllText(_saveFilePath);
@@ -680,50 +703,90 @@ public class NightSystem : MonoBehaviour
         {
             if (_saveData.slots[i] == null)
                 _saveData.slots[i] = new SaveSlotData();
+
+            _saveData.slots[i].createdAtUtc = NormalizeToLocalTimeString(_saveData.slots[i].createdAtUtc);
+            _saveData.slots[i].lastSavedAtUtc = NormalizeToLocalTimeString(_saveData.slots[i].lastSavedAtUtc);
         }
 
         _saveData.activeSlotIndex = Mathf.Clamp(_saveData.activeSlotIndex, 0, 2);
-
-        if (!TryMigrateLegacyPlayerPrefsSaves())
-            SaveSaveDataToDisk();
-    }
-
-    bool TryMigrateLegacyPlayerPrefsSaves()
-    {
-        bool migratedAny = false;
-        for (int i = 0; i < 3; i++)
-        {
-            string hasKey = $"SaveSlots.{i}.HasData";
-            if (PlayerPrefs.GetInt(hasKey, 0) != 1)
-                continue;
-
-            SaveSlotData slot = _saveData.slots[i] ?? new SaveSlotData();
-            slot.hasData = true;
-            slot.currentNight = Mathf.Max(1, PlayerPrefs.GetInt($"SaveSlots.{i}.CurrentNight", 1));
-            slot.deathCount = Mathf.Max(0, PlayerPrefs.GetInt($"SaveSlots.{i}.Deaths", 0));
-            slot.createdAtUtc = PlayerPrefs.GetString($"SaveSlots.{i}.CreatedAtUtc", DateTime.UtcNow.ToString("O"));
-            slot.lastSavedAtUtc = PlayerPrefs.GetString($"SaveSlots.{i}.LastSavedAtUtc", slot.createdAtUtc);
-            _saveData.slots[i] = slot;
-            migratedAny = true;
-        }
-
-        if (migratedAny)
-        {
-            _saveData.activeSlotIndex = Mathf.Clamp(PlayerPrefs.GetInt("SaveSlots.ActiveIndex", _saveData.activeSlotIndex), 0, 2);
-            SaveSaveDataToDisk();
-        }
-
-        return migratedAny;
     }
 
     void SaveSaveDataToDisk()
     {
+        EnsureSaveFilePath();
+
         if (_saveData == null)
             _saveData = new SaveDataRoot();
 
         _saveData.activeSlotIndex = Mathf.Clamp(_saveData.activeSlotIndex, 0, 2);
         string json = JsonUtility.ToJson(_saveData, true);
-        System.IO.File.WriteAllText(_saveFilePath, json);
+        WriteJsonWithBackup(_saveFilePath, json);
+    }
+
+    [ContextMenu("Log Save File Path")]
+    void LogSaveFilePath()
+    {
+        EnsureSaveFilePath();
+        Debug.Log($"[NightSystem] Save file path: {_saveFilePath}", this);
+    }
+
+    void EnsureSaveFilePath()
+    {
+        if (!string.IsNullOrWhiteSpace(_saveFilePath))
+            return;
+
+        string fileName = string.IsNullOrWhiteSpace(saveFileName) ? "save-slots.json" : saveFileName;
+        _saveFilePath = System.IO.Path.Combine(Application.persistentDataPath, fileName);
+    }
+
+    static void WriteJsonWithBackup(string path, string json)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        string backupPath = path + ".bak";
+        if (System.IO.File.Exists(path))
+            System.IO.File.Copy(path, backupPath, true);
+
+        System.IO.File.WriteAllText(path, json);
+    }
+
+    public void SetDebugIgnorePlayerDeath(bool enabled)
+    {
+        debugIgnorePlayerDeath = enabled;
+    }
+
+    public void ResetAllSaveData()
+    {
+        EnsureSaveFilePath();
+        _saveData = new SaveDataRoot();
+        activeSaveSlotIndex = 0;
+        SaveSaveDataToDisk();
+    }
+
+    TemporaryMainMenu GetMainMenu()
+    {
+        return FindFirstObjectByType<TemporaryMainMenu>();
+    }
+
+    static string NormalizeToLocalTimeString(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return string.Empty;
+
+        if (raw.Contains("Z") || raw.Contains("+") || raw.Contains("GMT") || raw.Contains("UTC"))
+        {
+            if (DateTimeOffset.TryParse(raw, CultureInfo.CurrentCulture, DateTimeStyles.AssumeUniversal, out DateTimeOffset offset))
+                return offset.ToLocalTime().ToString("g");
+
+            if (DateTime.TryParse(raw, CultureInfo.CurrentCulture, DateTimeStyles.AssumeUniversal, out DateTime utcDate))
+                return utcDate.ToLocalTime().ToString("g");
+        }
+
+        if (DateTime.TryParse(raw, out DateTime localDate))
+            return localDate.ToString("g");
+
+        return raw;
     }
 
     DaySettings GetDaySettings(NightDay day)
@@ -733,6 +796,16 @@ public class NightSystem : MonoBehaviour
             case NightDay.Day2: return day2;
             case NightDay.Day3: return day3;
             default: return day1;
+        }
+    }
+
+    static NightDay GetNextDay(NightDay day)
+    {
+        switch (day)
+        {
+            case NightDay.Day1: return NightDay.Day2;
+            case NightDay.Day2: return NightDay.Day3;
+            default: return NightDay.Day3;
         }
     }
 }

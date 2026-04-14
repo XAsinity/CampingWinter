@@ -32,6 +32,8 @@ public class PlayerFlashlight : MonoBehaviour
     AudioSource _toggleAudio;
     Coroutine _disruptionRoutine;
     bool _isDisrupted;
+    bool _isForcedOff;
+    bool _debugInfiniteBattery;
 
     public float BatteryPercent => (_battery / maxBattery) * 100f;
     public bool  IsOn           => _isOn;
@@ -71,6 +73,14 @@ public class PlayerFlashlight : MonoBehaviour
     {
         if (_light == null) return;
 
+        if (_isForcedOff)
+        {
+            _isOn = false;
+            _light.enabled = false;
+            _light.intensity = _baseIntensity;
+            return;
+        }
+
         if (_isDisrupted)
             return;
 
@@ -90,9 +100,16 @@ public class PlayerFlashlight : MonoBehaviour
 
         if (_isOn)
         {
-            float effectiveDrain = drainRate * GetBatteryDrainMultiplier();
-            _battery -= effectiveDrain * Time.deltaTime;
-            _battery = Mathf.Max(0f, _battery);
+            if (_debugInfiniteBattery)
+            {
+                _battery = maxBattery;
+            }
+            else
+            {
+                float effectiveDrain = drainRate * GetBatteryDrainMultiplier();
+                _battery -= effectiveDrain * Time.deltaTime;
+                _battery = Mathf.Max(0f, _battery);
+            }
 
             if (_battery <= 0f)
             {
@@ -113,6 +130,13 @@ public class PlayerFlashlight : MonoBehaviour
         }
     }
 
+    public void SetDebugInfiniteBattery(bool enabled)
+    {
+        _debugInfiniteBattery = enabled;
+        if (_debugInfiniteBattery)
+            _battery = maxBattery;
+    }
+
     public void SetToggleInputEnabled(bool enabled)
     {
         _toggleInputEnabled = enabled;
@@ -123,8 +147,19 @@ public class PlayerFlashlight : MonoBehaviour
         if (_light == null)
             return;
 
-        _isOn = enabled && _battery > 0f;
+        _isOn = enabled && !_isForcedOff && _battery > 0f;
         _light.enabled = _isOn;
+        _light.intensity = _baseIntensity;
+    }
+
+    public void SetForcedOff(bool forcedOff)
+    {
+        _isForcedOff = forcedOff;
+        if (!_isForcedOff || _light == null)
+            return;
+
+        _isOn = false;
+        _light.enabled = false;
         _light.intensity = _baseIntensity;
     }
 

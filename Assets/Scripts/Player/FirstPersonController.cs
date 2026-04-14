@@ -52,11 +52,17 @@ public class FirstPersonController : MonoBehaviour
     public bool IsCrouching  => _isCrouching;
     public bool IsGrounded   => _cc.isGrounded;
     public bool ControlsEnabled => _controlsEnabled;
+    public float MouseSensitivity => mouseSensitivity;
 
     void Start()
     {
         _cc = GetComponent<CharacterController>();
         _camTransform = GetComponentInChildren<Camera>().transform;
+
+        PlayerSettings settings = PlayerSettings.Instance != null ? PlayerSettings.Instance : FindFirstObjectByType<PlayerSettings>();
+        if (settings != null)
+            SetMouseSensitivity(settings.MouseSensitivity);
+
         _footstepSource = footstepSource;
         if (_footstepSource == null)
         {
@@ -275,5 +281,10 @@ public class FirstPersonController : MonoBehaviour
         }
 
         _bobTimer = 0f;
+    }
+
+    public void SetMouseSensitivity(float sensitivity)
+    {
+        mouseSensitivity = Mathf.Max(0.01f, sensitivity);
     }
 }

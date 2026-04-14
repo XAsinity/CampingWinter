@@ -27,6 +27,7 @@ public class PlayerSleepSystem : MonoBehaviour
 
     FirstPersonController _controller;
     PlayerInteraction _interaction;
+    PlayerFlashlight _flashlight;
     Camera _playerCamera;
     CharacterController _characterController;
 
@@ -53,6 +54,7 @@ public class PlayerSleepSystem : MonoBehaviour
     {
         _controller = GetComponent<FirstPersonController>();
         _interaction = GetComponent<PlayerInteraction>();
+        _flashlight = GetComponent<PlayerFlashlight>();
         _characterController = GetComponent<CharacterController>();
         _playerCamera = GetComponentInChildren<Camera>();
 
@@ -70,6 +72,8 @@ public class PlayerSleepSystem : MonoBehaviour
         if (!_isInBag || _activeBag == null || _playerCamera == null)
         {
             _isHoldingSleep = false;
+            if (_flashlight != null)
+                _flashlight.SetForcedOff(false);
             return;
         }
 
@@ -89,6 +93,9 @@ public class PlayerSleepSystem : MonoBehaviour
 
         if (holdingSleep)
         {
+            if (_flashlight != null)
+                _flashlight.SetForcedOff(true);
+
             // Sleeping = no camera movement.
             targetPosition = GetLayTargetPosition(_activeBag);
             float layYaw = GetLayYaw(_activeBag);
@@ -100,6 +107,9 @@ public class PlayerSleepSystem : MonoBehaviour
         }
         else
         {
+            if (_flashlight != null)
+                _flashlight.SetForcedOff(false);
+
             // Sitting = limited look range.
             Transform sit = _activeBag.SitAnchor;
             targetPosition = GetSitTargetPosition(_activeBag);
@@ -195,6 +205,9 @@ public class PlayerSleepSystem : MonoBehaviour
 
         _activeBag = null;
         _isHoldingSleep = false;
+
+        if (_flashlight != null)
+            _flashlight.SetForcedOff(false);
     }
 
     public void ConfigureSleepProgressRates(float gainPerSecond, float decayPerSecond)

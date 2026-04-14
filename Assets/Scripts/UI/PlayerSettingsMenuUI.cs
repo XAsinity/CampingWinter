@@ -14,10 +14,17 @@ public class PlayerSettingsMenuUI : MonoBehaviour
     [Header("Quality UI")]
     [SerializeField] Dropdown qualityDropdown;
     [SerializeField] Dropdown shadowDropdown;
+    [SerializeField] Toggle motionBlurToggle;
 
     [Header("Audio UI")]
     [SerializeField] Slider masterVolumeSlider;
     [SerializeField] Text masterVolumeValueText;
+    [SerializeField] Slider menuMusicVolumeSlider;
+    [SerializeField] Text menuMusicVolumeValueText;
+
+    [Header("Controls UI")]
+    [SerializeField] Slider mouseSensitivitySlider;
+    [SerializeField] Text mouseSensitivityValueText;
 
     [Header("Buttons")]
     [SerializeField] Button applyButton;
@@ -29,7 +36,10 @@ public class PlayerSettingsMenuUI : MonoBehaviour
     int _pendingFrameRate;
     int _pendingQualityIndex;
     ShadowQuality _pendingShadowQuality;
+    bool _pendingMotionBlur;
     float _pendingMasterVolume;
+    float _pendingMenuMusicVolume;
+    float _pendingMouseSensitivity;
 
     void Awake()
     {
@@ -73,6 +83,18 @@ public class PlayerSettingsMenuUI : MonoBehaviour
             masterVolumeSlider.minValue = 0f;
             masterVolumeSlider.maxValue = 4f;
         }
+
+        if (menuMusicVolumeSlider != null)
+        {
+            menuMusicVolumeSlider.minValue = 0f;
+            menuMusicVolumeSlider.maxValue = 1f;
+        }
+
+        if (mouseSensitivitySlider != null)
+        {
+            mouseSensitivitySlider.minValue = 0.2f;
+            mouseSensitivitySlider.maxValue = 8f;
+        }
     }
 
     void HookEvents()
@@ -89,8 +111,17 @@ public class PlayerSettingsMenuUI : MonoBehaviour
         if (shadowDropdown != null)
             shadowDropdown.onValueChanged.AddListener(OnShadowChanged);
 
+        if (motionBlurToggle != null)
+            motionBlurToggle.onValueChanged.AddListener(OnMotionBlurChanged);
+
         if (masterVolumeSlider != null)
             masterVolumeSlider.onValueChanged.AddListener(OnMasterVolumeChanged);
+
+        if (menuMusicVolumeSlider != null)
+            menuMusicVolumeSlider.onValueChanged.AddListener(OnMenuMusicVolumeChanged);
+
+        if (mouseSensitivitySlider != null)
+            mouseSensitivitySlider.onValueChanged.AddListener(OnMouseSensitivityChanged);
 
         if (applyButton != null)
             applyButton.onClick.AddListener(ApplyPending);
@@ -108,7 +139,10 @@ public class PlayerSettingsMenuUI : MonoBehaviour
         _pendingFrameRate = playerSettings.TargetFrameRate;
         _pendingQualityIndex = playerSettings.QualityLevelIndex;
         _pendingShadowQuality = playerSettings.ShadowQualitySetting;
+        _pendingMotionBlur = playerSettings.EnableMotionBlur;
         _pendingMasterVolume = playerSettings.MasterVolume;
+        _pendingMenuMusicVolume = playerSettings.MenuMusicVolume;
+        _pendingMouseSensitivity = playerSettings.MouseSensitivity;
     }
 
     void PushPendingToUi()
@@ -127,8 +161,17 @@ public class PlayerSettingsMenuUI : MonoBehaviour
         if (shadowDropdown != null)
             shadowDropdown.value = ShadowQualityToIndex(_pendingShadowQuality);
 
+        if (motionBlurToggle != null)
+            motionBlurToggle.isOn = _pendingMotionBlur;
+
         if (masterVolumeSlider != null)
             masterVolumeSlider.value = _pendingMasterVolume;
+
+        if (menuMusicVolumeSlider != null)
+            menuMusicVolumeSlider.value = _pendingMenuMusicVolume;
+
+        if (mouseSensitivitySlider != null)
+            mouseSensitivitySlider.value = _pendingMouseSensitivity;
 
         UpdateLabels();
         _isUpdatingUi = false;
@@ -141,6 +184,12 @@ public class PlayerSettingsMenuUI : MonoBehaviour
 
         if (masterVolumeValueText != null)
             masterVolumeValueText.text = $"{_pendingMasterVolume:0.00}";
+
+        if (menuMusicVolumeValueText != null)
+            menuMusicVolumeValueText.text = $"{_pendingMenuMusicVolume:0.00}";
+
+        if (mouseSensitivityValueText != null)
+            mouseSensitivityValueText.text = $"{_pendingMouseSensitivity:0.00}";
     }
 
     void OnVSyncChanged(bool value)
@@ -168,10 +217,30 @@ public class PlayerSettingsMenuUI : MonoBehaviour
         _pendingShadowQuality = IndexToShadowQuality(index);
     }
 
+    void OnMotionBlurChanged(bool value)
+    {
+        if (_isUpdatingUi) return;
+        _pendingMotionBlur = value;
+    }
+
     void OnMasterVolumeChanged(float value)
     {
         if (_isUpdatingUi) return;
         _pendingMasterVolume = value;
+        UpdateLabels();
+    }
+
+    void OnMenuMusicVolumeChanged(float value)
+    {
+        if (_isUpdatingUi) return;
+        _pendingMenuMusicVolume = value;
+        UpdateLabels();
+    }
+
+    void OnMouseSensitivityChanged(float value)
+    {
+        if (_isUpdatingUi) return;
+        _pendingMouseSensitivity = value;
         UpdateLabels();
     }
 
@@ -184,7 +253,10 @@ public class PlayerSettingsMenuUI : MonoBehaviour
         playerSettings.TargetFrameRate = _pendingFrameRate;
         playerSettings.QualityLevelIndex = _pendingQualityIndex;
         playerSettings.ShadowQualitySetting = _pendingShadowQuality;
+        playerSettings.EnableMotionBlur = _pendingMotionBlur;
         playerSettings.MasterVolume = _pendingMasterVolume;
+        playerSettings.MenuMusicVolume = _pendingMenuMusicVolume;
+        playerSettings.MouseSensitivity = _pendingMouseSensitivity;
         playerSettings.ApplyAndSave();
     }
 
